@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id              Int           @id @default(autoincrement())
+  nombre          String
+  correo          String        @unique
+  contrasena      String
+  rol             String        // 'POSTULANTE' | 'ADMIN' | 'RRHH' | 'JEFE_AREA'
+  numeroDocumento String?       @unique
+  credencialTemp  Boolean       @default(false)
+  creadoEn        DateTime      @default(now())
+  telefono        String?
+
+  // Relaciones
+  postulaciones   Postulacion[]
+  formaciones     Formacion[]
+  experiencias    Experiencia[]
+  documentos      Documento[]
+  evaluaciones    Evaluacion[]  @relation("EvaluadorEvaluaciones")
+}
+
+model Vacante {
+  id             Int            @id @default(autoincrement())
+  titulo         String
+  descripcion    String
+  requisitos     String
+  area           String
+  estado         String          @default("ABIERTA")
+  fechaApertura  DateTime        @default(now())
+  fechaCierre    DateTime?
+
+  postulaciones  Postulacion[]
+  documentos     Documento[]     // Relación inversa hacia Documento
+}
+
+
+model Postulacion {
+  id                  Int           @id @default(autoincrement())
+  usuarioId           Int
+  vacanteId           Int
+  experienciaAnos     Int?
+  estado              String        @default("EN_REVISION")
+  comentarios         String?
+  fechaPostulacion    DateTime      @default(now())
+  ultimaActualizacion DateTime?
+
+  // Relaciones
+  usuario     Usuario     @relation(fields: [usuarioId], references: [id])
+  vacante     Vacante     @relation(fields: [vacanteId], references: [id])
+  documentos  Documento[]
+  evaluaciones Evaluacion[] @relation("PostulacionEvaluaciones")
+}
+
+model Formacion {
+  id          Int      @id @default(autoincrement())
+  usuarioId   Int
+  nivel       String
+  institucion String
+  anioFin     Int?
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+}
+
+model Experiencia {
+  id        Int     @id @default(autoincrement())
+  usuarioId Int
+  cargo     String
+  empresa   String
+  anios     Int
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+}
+
+model Documento {
+  id             Int          @id @default(autoincrement())
+  usuarioId      Int
+  tipo           String
+  urlArchivo     String
+
+  // Relaciones
+  usuario        Usuario      @relation(fields: [usuarioId], references: [id])
+
+  postulacionId  Int?
+  postulacion    Postulacion? @relation(fields: [postulacionId], references: [id])
+
+  vacanteId      Int?          // 👈 NUEVO: permite vincular documento a una vacante
+  vacante        Vacante?      @relation(fields: [vacanteId], references: [id])
+}
+
+model Evaluacion {
+  id              Int        @id @default(autoincrement())
+  postulacionId   Int
+  evaluadorId     Int
+  puntajeTecnico  Int?
+  puntajeActitud  Int?
+  observaciones   String?
+  estadoFinal     String?     @default("EN_PROCESO")
+  fechaEvaluacion DateTime?   @default(now())
+
+  // Relaciones
+  postulacion Postulacion @relation("PostulacionEvaluaciones", fields: [postulacionId], references: [id])
+  evaluador   Usuario     @relation("EvaluadorEvaluaciones", fields: [evaluadorId], references: [id])
+}
