@@ -14,6 +14,7 @@ model Usuario {
   contrasena      String
   rol             String        // 'POSTULANTE' | 'ADMIN' | 'RRHH' | 'JEFE_AREA'
   numeroDocumento String?       @unique
+  fechaExpedicion String        @unique
   credencialTemp  Boolean       @default(false)
   creadoEn        DateTime      @default(now())
   telefono        String?
