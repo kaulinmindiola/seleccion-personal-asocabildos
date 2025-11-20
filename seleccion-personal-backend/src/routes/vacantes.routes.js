@@ -1,28 +1,25 @@
 import { Router } from "express";
 import {
-  createVacante,
   listVacantes,
   getVacante,
+  createVacante,
   updateVacante,
-  deleteVacante,
+  deleteVacante
 } from "../controllers/vacantes.controller.js";
 import { authRequired, permit } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-// Crear una nueva vacante (solo RRHH o ADMIN)
-router.post("/", authRequired, permit("RRHH", "ADMIN"), createVacante);
-
-// Listar todas las vacantes (público)
+// Público: listar vacantes públicas / filtros
 router.get("/", listVacantes);
 
-// Obtener una vacante específica (público)
+// Obtener detalle de vacante (público)
 router.get("/:id", getVacante);
 
-// Actualizar vacante (solo RRHH o ADMIN)
-router.put("/:id", authRequired, permit("RRHH", "ADMIN"), updateVacante);
-
-// Eliminar vacante (solo RRHH o ADMIN)
-router.delete("/:id", authRequired, permit("RRHH", "ADMIN"), deleteVacante);
+// Rutas protegidas: admin/rrhh
+router.post("/", authRequired, permit("ADMIN"), createVacante);
+router.put("/:id", authRequired, permit("ADMIN"), updateVacante);
+router.patch("/:id", authRequired, permit("ADMIN"), updateVacante);
+router.delete("/:id", authRequired, permit("ADMIN"), deleteVacante);
 
 export default router;

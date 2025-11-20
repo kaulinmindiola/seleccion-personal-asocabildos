@@ -29,91 +29,97 @@ const padDocumentoTo13 = (doc) => doc.toString().padStart(13, "0");
 // =============================================
 export const applyToVacante = async (req, res) => {
   try {
-    const { vacanteId, experienciaAnos, numeroDocumento, nombre, correo, telefono } = req.body;
-    const documentoPath = req.file ? req.file.path : null;
-
-    if (!vacanteId || !numeroDocumento || !nombre) {
-      return res.status(400).json({ msg: "vacanteId, numeroDocumento y nombre son obligatorios" });
+    // Si estás recibiendo multipart/form-data (con Multer), usa req.body
+    const { vacanteId, experienciaAnos, numeroDocumento, nombre, correo, telefono, fechaExpedicion } = req.body;
+    // Validaciones mínimas
+    if (!vacanteId || !numeroDocumento || !nombre || !fechaExpedicion) {
+      return res.status(400).json({ msg: "vacanteId, numeroDocumento, nombre y fechaExpedicion son obligatorios" });
     }
 
-    // validar vacante
+    // Verificar vacante
     const vacante = await prisma.vacante.findUnique({ where: { id: Number(vacanteId) } });
     if (!vacante) return res.status(404).json({ msg: "Vacante no encontrada" });
 
-    const plainPassword = generatePlainPassword(numeroDocumento, nombre);
+    // Buscar usuario por numeroDocumento
+    let usuario = await prisma.usuario.findUnique({ where: { numeroDocumento: String(numeroDocumento) } });
 
-    let usuario = await prisma.usuario.findUnique({
-      where: { numeroDocumento: String(numeroDocumento) }
-    });
+    // Parse fechaExpedicion a Date si viene como string ISO
+  // 📌 Normalizar la fecha (guardar sin hora)
+let fechaExp = null;
+if (fechaExpedicion) {
+  fechaExp = new Date(fechaExpedicion);
+  fechaExp.setHours(0, 0, 0, 0); // <--- elimina la hora
+  console.log("inicioDia:", inicioDia);
+console.log("finDia:", finDia);
+console.log("numeroDocumento:", numeroDocumento);
 
-    if (usuario) {
-      // verificar si ya está postulado a esta vacante
-      const ya = await prisma.postulacion.findFirst({
-        where: { usuarioId: usuario.id, vacanteId: Number(vacanteId) }
-      });
-      if (ya) return res.status(400).json({ msg: "Ya te postulaste a esta vacante" });
+}
 
-      // regenerar credenciales temporales
-      const hashed = await hashPassword(plainPassword);
-      usuario = await prisma.usuario.update({
-        where: { id: usuario.id },
-        data: {
-          contrasena: hashed,
-          credencialTemp: true,
-          correo: correo ?? usuario.correo,
-          nombre: nombre ?? usuario.nombre,
-          telefono: telefono ?? usuario.telefono,
-        },
-      });
-    } else {
-      // crear nuevo usuario postulante
-      const hashed = await hashPassword(plainPassword);
+
+    if (!usuario) {
+      // Crear usuario sin credenciales (contrasena null)
       usuario = await prisma.usuario.create({
         data: {
           nombre,
           correo: correo || null,
-          contrasena: hashed,
+          contrasena: null,
           rol: "POSTULANTE",
           numeroDocumento: String(numeroDocumento),
-          credencialTemp: true,
-          telefono: telefono || null
+          fechaExpedicion: fechaExp,
+          credencialTemp: false,
+          // telefono si lo tienes en modelo:
+        }
+      });
+    } else {
+      // Actualizar datos útiles si vienen (no tocar contrasena)
+      await prisma.usuario.update({
+        where: { id: usuario.id },
+        data: {
+          nombre,
+          correo: correo || usuario.correo,
+          fechaExpedicion: fechaExp || usuario.fechaExpedicion,
+          // no tocar contrasena ni credencialTemp
         }
       });
     }
 
-    // Crear postulación
+    // Evitar duplicados de postulación: same usuario y vacante
+    const yaPostulado = await prisma.postulacion.findFirst({
+      where: { usuarioId: usuario.id, vacanteId: Number(vacanteId) }
+    });
+    if (yaPostulado) {
+      return res.status(400).json({ msg: "Ya te has postulado a esta vacante" });
+    }
+
+    // Guardar documento si multer lo agregó en req.file (opcional)
+    const documentoPath = req.file ? req.file.path : null;
+
     const postulacion = await prisma.postulacion.create({
       data: {
         usuarioId: usuario.id,
         vacanteId: Number(vacanteId),
         experienciaAnos: experienciaAnos ? Number(experienciaAnos) : null,
         estado: "EN_REVISION",
-      },
-    });
-
-    // Guardar documento si existe
-    if (documentoPath) {
-      await prisma.documento.create({
-        data: {
-          urlArchivo: documentoPath,
-          tipo: "CV",
-          usuarioId: usuario.id,
-          postulacionId: postulacion.id,
-        },
-      });
-    }
-
-    res.status(201).json({
-      postulacion,
-      credentials: {
-        numeroDocumento,
-        password: plainPassword,
-        note: "Estas credenciales son temporales y válidas mientras tengas al menos una postulación activa."
+        fechaPostulacion: new Date(),
+        comentarios: null,
+        // guarda ruta de documento si tu modelo Documento lo contempla
       }
     });
+
+    // Respuesta simple: no devolver credenciales
+    return res.status(201).json({
+      msg: "Postulación registrada correctamente",
+      postulacion: {
+        id: postulacion.id,
+        usuarioId: usuario.id,
+        vacanteId: postulacion.vacanteId,
+        fechaPostulacion: postulacion.fechaPostulacion
+      }
+    });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ msg: "Error al crear postulación", error: error.message });
+    console.error("applyToVacante error:", error);
+    return res.status(500).json({ msg: "Error al crear postulación", error: error.message });
   }
 };
 
@@ -147,6 +153,60 @@ export const recuperarCredenciales = async (req, res) => {
     res.status(500).json({ msg: "Error al recuperar credenciales", error: err.message });
   }
 };
+
+export const seguimientoPublico = async (req, res) => {
+  try {
+    const { numeroDocumento, fechaExpedicion } = req.body;
+    if (!numeroDocumento || !fechaExpedicion) {
+      return res.status(400).json({ msg: "numeroDocumento y fechaExpedicion requeridos" });
+    }
+
+    // Normalizar fecha recibida
+    const fecha = new Date(fechaExpedicion);
+    fecha.setHours(0, 0, 0, 0);
+
+    const siguienteDia = new Date(fecha);
+    siguienteDia.setDate(fecha.getDate() + 1);
+
+    // Buscar usuario dentro del rango del día
+    const usuario = await prisma.usuario.findFirst({
+      where: {
+        numeroDocumento: String(numeroDocumento),
+        fechaExpedicion: {
+          gte: fecha,
+          lt: siguienteDia,
+        }
+      }
+    });
+
+    if (!usuario) {
+      return res.status(404).json({ msg: "No se encontró un postulante con esos datos" });
+    }
+
+    const postulaciones = await prisma.postulacion.findMany({
+      where: { usuarioId: usuario.id },
+      include: {
+        vacante: true,
+      },
+      orderBy: { fechaPostulacion: "desc" }
+    });
+
+    return res.json({
+      usuario: { 
+        id: usuario.id, 
+        nombre: usuario.nombre, 
+        numeroDocumento: usuario.numeroDocumento 
+      }, 
+      postulaciones 
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ msg: err.message });
+  }
+};
+
+
 
 // =============================================
 // 📌 GET /api/postulaciones/seguimiento

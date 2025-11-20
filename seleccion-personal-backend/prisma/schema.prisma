@@ -4,17 +4,16 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model Usuario {
   id              Int           @id @default(autoincrement())
   nombre          String
   correo          String        @unique
-  contrasena      String
+  contrasena      String?
   rol             String        // 'POSTULANTE' | 'ADMIN' | 'RRHH' | 'JEFE_AREA'
-  numeroDocumento String?       @unique
-  fechaExpedicion String        @unique
+  numeroDocumento String       @unique
+  fechaExpedicion DateTime     
   credencialTemp  Boolean       @default(false)
   creadoEn        DateTime      @default(now())
   telefono        String?
@@ -25,17 +24,24 @@ model Usuario {
   experiencias    Experiencia[]
   documentos      Documento[]
   evaluaciones    Evaluacion[]  @relation("EvaluadorEvaluaciones")
+  vacantesCreadas Vacante[] //PARA ADMIN
 }
 
 model Vacante {
-  id             Int            @id @default(autoincrement())
+  id             Int          @id @default(autoincrement())
   titulo         String
-  descripcion    String
-  requisitos     String
-  area           String
-  estado         String          @default("ABIERTA")
-  fechaApertura  DateTime        @default(now())
+  descripcion    String?
+  requisitos     String?
+  area           String?
+  estado         String       @default("ABIERTA") // ABIERTA | CERRADA | PAUSADA | ARCHIVADA
+  existe      Boolean      @default(true)
+
+  creadoPorId    Int?
+  creadoPor      Usuario?     @relation(fields: [creadoPorId], references: [id])
+  fechaPublicacion DateTime?  @default(now())
   fechaCierre    DateTime?
+  creadoEn       DateTime     @default(now())
+  actualizadoEn  DateTime?    @updatedAt
 
   postulaciones  Postulacion[]
   documentos     Documento[]     // Relación inversa hacia Documento

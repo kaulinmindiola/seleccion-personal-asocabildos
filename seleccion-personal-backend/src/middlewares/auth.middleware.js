@@ -1,29 +1,42 @@
-import jwt from "jsonwebtoken";
-import prisma from "../prisma/client.js";
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv'; // Asegúrate de tener dotenv instalado
 
-export const authRequired = async (req, res, next) => {
+dotenv.config(); // Cargamos las variables de entorno por seguridad
+
+export const authRequired = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ msg: "Token no proporcionado" });
 
-  const token = authHeader.split(" ")[1];
+  // Log para ver qué llega al servidor (DEBUG)
+  // console.log("📥 Header recibido:", authHeader); 
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await prisma.usuario.findUnique({ where: { id: decoded.id } });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: "Token no provisto" });
+  }
 
-    if (!user) return res.status(401).json({ msg: "Usuario no encontrado" });
+  const token = authHeader.split(' ')[1];
 
+  // Verifica que este log coincida con el secreto usado en auth.controller.js
+  // console.log("🔐 Verificando con secreto:", process.env.JWT_SECRET || "secret123");
+
+  jwt.verify(token, process.env.JWT_SECRET || "secret123", (err, user) => {
+    if (err) {
+        console.error("❌ Error Token:", err.message);
+        return res.status(403).json({ message: "Token inválido o expirado" });
+    }
+    
     req.user = user;
     next();
-  } catch (error) {
-    res.status(401).json({ msg: "Token inválido o expirado" });
-  }
+  });
 };
 
+// ... (función permit sigue igual)
 export const permit = (...roles) => {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ msg: "No autenticado" });
-    if (!roles.includes(req.user.rol)) return res.status(403).json({ msg: "Acceso denegado" });
+    
+    if (!roles.includes(req.user.rol)) {
+      return res.status(403).json({ msg: "No tienes permisos" });
+    }
     next();
   };
 };

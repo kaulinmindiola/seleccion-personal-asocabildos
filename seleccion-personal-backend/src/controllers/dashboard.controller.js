@@ -1,133 +1,227 @@
 import prisma from "../prisma/client.js";
+import { dashboardRangeSchema, dashboardPaginationSchema } from "../validators/dashboard.validator.js";
 
-// ================================
-// 📊 1. Resumen general
-// ================================
-export const resumenGeneral = async (_req, res) => {
+// 3.1 KPI globales
+export const dashboardKPIs = async (req, res) => {
   try {
-    const totalUsuarios = await prisma.usuario.count();
     const totalVacantes = await prisma.vacante.count();
+    const vacantesAbiertas = await prisma.vacante.count({ where: { estado: "ABIERTA" } });
     const totalPostulaciones = await prisma.postulacion.count();
-    const totalEvaluaciones = await prisma.evaluacion.count();
+    const totalUsuarios = await prisma.usuario.count();
 
-    const vacantesAbiertas = await prisma.vacante.count({
-      where: { estado: "ABIERTA" },
-    });
-    const vacantesCerradas = await prisma.vacante.count({
-      where: { estado: "CERRADA" },
-    });
-
-    const aprobados = await prisma.evaluacion.count({
-      where: { estadoFinal: "APROBADO" },
-    });
-    const rechazados = await prisma.evaluacion.count({
-      where: { estadoFinal: "RECHAZADO" },
-    });
+    const promedioPostulacionesPorVacante =
+      totalVacantes > 0 ? totalPostulaciones / totalVacantes : 0;
 
     res.json({
-      usuarios: totalUsuarios,
-      vacantes: totalVacantes,
-      postulaciones: totalPostulaciones,
-      evaluaciones: totalEvaluaciones,
+      totalVacantes,
       vacantesAbiertas,
-      vacantesCerradas,
-      candidatosAprobados: aprobados,
-      candidatosRechazados: rechazados,
+      totalPostulaciones,
+      totalUsuarios,
+      promedioPostulacionesPorVacante: Number(promedioPostulacionesPorVacante.toFixed(2))
     });
-  } catch (error) {
-    res.status(500).json({ msg: "Error al obtener resumen general", error: error.message });
+  } catch (err) {
+    console.error("dashboardKPIs error:", err);
+    res.status(500).json({ msg: "Error al obtener KPIs", error: err.message });
   }
 };
 
-// ================================
-// 📈 2. Tendencias temporales
-// ================================
-export const tendencias = async (_req, res) => {
+// 3.2 Estadísticas por rango de fechas
+export const dashboardPorRango = async (req, res) => {
   try {
-    // Agrupa vacantes por mes de apertura
-    const vacantesPorMes = await prisma.$queryRaw`
-      SELECT DATE_TRUNC('month', "fechaApertura") AS mes, COUNT(*)::int AS total
-      FROM "Vacante"
-      GROUP BY DATE_TRUNC('month', "fechaApertura")
-      ORDER BY DATE_TRUNC('month', "fechaApertura");
-    `;
+    const { error, value } = dashboardRangeSchema.validate(req.query);
+    if (error) return res.status(400).json({ msg: error.details[0].message });
 
-    // Agrupa postulaciones por mes
-    const postulacionesPorMes = await prisma.$queryRaw`
-      SELECT DATE_TRUNC('month', "fechaPostulacion") AS mes, COUNT(*)::int AS total
-      FROM "Postulacion"
-      GROUP BY DATE_TRUNC('month', "fechaPostulacion")
-      ORDER BY DATE_TRUNC('month', "fechaPostulacion");
-    `;
+    const { startDate, endDate } = value;
+
+    const vacantes = await prisma.vacante.count({
+      where: { creadoEn: { gte: startDate, lte: endDate } }
+    });
+
+    const postulaciones = await prisma.postulacion.count({
+      where: { fechaPostulacion: { gte: startDate, lte: endDate } }
+    });
 
     res.json({
-      vacantesPorMes,
-      postulacionesPorMes,
+      rango: { startDate, endDate },
+      vacantes,
+      postulaciones
     });
-  } catch (error) {
-    res.status(500).json({ msg: "Error al obtener tendencias", error: error.message });
+  } catch (err) {
+    console.error("dashboardPorRango error:", err);
+    res.status(500).json({ msg: "Error al obtener estadísticas", error: err.message });
   }
 };
 
-
-// ================================
-// 🏆 3. Ranking de candidatos (por puntaje promedio)
-// ================================
-// ================================
-// 🏆 3. Ranking de candidatos (por puntaje promedio)
-// ================================
-// ================================
-// 🏆 3. Ranking de candidatos (por puntaje promedio)
-// ================================
-export const rankingCandidatos = async (_req, res) => {
+// 3.3 Postulaciones por área
+export const dashboardPorArea = async (req, res) => {
   try {
-    const resultado = await prisma.$queryRaw`
-      SELECT 
-        u.id,
-        u.nombre,
-        u.correo,
-        ROUND(AVG((e."puntajeTecnico" + e."puntajeActitud") / 2)) AS promedio,
-        COUNT(e.id)::int AS evaluaciones
-      FROM "Evaluacion" e
-      INNER JOIN "Postulacion" p ON e."postulacionId" = p.id
-      INNER JOIN "Usuario" u ON p."usuarioId" = u.id
-      GROUP BY u.id, u.nombre, u.correo
-      ORDER BY promedio DESC;
-    `;
-
-    res.json(resultado);
-  } catch (error) {
-    res.status(500).json({ msg: "Error al obtener ranking de candidatos", error: error.message });
-  }
-};
-
-// ================================
-// 📌 4. Estadísticas por área
-// ================================
-export const estadisticasPorArea = async (_req, res) => {
-  try {
-    const data = await prisma.$queryRaw`
-      SELECT "area", COUNT(*) AS total, 
-      SUM(CASE WHEN "estado" = 'ABIERTA' THEN 1 ELSE 0 END) AS abiertas,
-      SUM(CASE WHEN "estado" = 'CERRADA' THEN 1 ELSE 0 END) AS cerradas
-      FROM "Vacante"
-      GROUP BY "area"
-      ORDER BY total DESC;
-    `;
-
-    // Convertimos BigInt a Number antes de enviar la respuesta
-    const formattedData = data.map(row=> ({
-        area: row.area,
-        total: Number(row.total),
-        abiertas: Number(row.abiertas),
-        cerradas: Number(row.cerradas),
-    }));
-
-    res.json(formattedData);
-  } catch (error) {
-    res.status(500).json({ 
-      msg: "Error al obtener estadísticas por área", 
-      error: error.message 
+    // Primero agrupamos por vacante
+    const grupos = await prisma.postulacion.groupBy({
+      by: ["vacanteId"],
+      _count: { id: true }
     });
+
+    // Sacamos las vacantes y sus áreas
+    const vacantes = await prisma.vacante.findMany({
+      where: { id: { in: grupos.map(g => g.vacanteId) } },
+      select: { id: true, area: true }
+    });
+
+    // Unimos datos
+    const result = grupos.map(g => {
+      const v = vacantes.find(x => x.id === g.vacanteId);
+      return {
+        area: v?.area ?? "Sin área",
+        postulaciones: g._count.id
+      };
+    });
+
+    res.json(result);
+
+  } catch (err) {
+    console.error("dashboardPorArea error:", err);
+    res.status(500).json({ msg: "Error al agrupar por área", error: err.message });
   }
 };
+
+
+// 3.4 Postulaciones por vacante
+export const dashboardPorVacante = async (req, res) => {
+  try {
+    const grupos = await prisma.postulacion.groupBy({
+      by: ["vacanteId"],
+      _count: { id: true }
+    });
+
+    const vacantes = await prisma.vacante.findMany({
+      where: { id: { in: grupos.map(g => g.vacanteId) } },
+      select: { id: true, titulo: true }
+    });
+
+    const result = grupos.map(g => {
+      const v = vacantes.find(x => x.id === g.vacanteId);
+      return {
+        vacanteId: g.vacanteId,
+        titulo: v?.titulo || "Vacante eliminada",
+        postulaciones: g._count.id
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error("dashboardPorVacante error:", err);
+    res.status(500).json({ msg: "Error en agrupación por vacante", error: err.message });
+  }
+};
+
+// 3.5 Tiempo promedio de contratación
+export const dashboardTiempoContratacion = async (req, res) => {
+  try {
+    const registros = await prisma.postulacion.findMany({
+      where: { estado: "CONTRATADO" },
+      select: {
+        fechaPostulacion: true,
+        ultimaActualizacion: true
+      }
+    });
+
+    if (registros.length === 0)
+      return res.json({ promedioDias: 0 });
+
+    let sumaDias = 0;
+
+    registros.forEach(r => {
+      if (!r.ultimaActualizacion) return; // evita valores null
+      const diff = (new Date(r.ultimaActualizacion) - new Date(r.fechaPostulacion)) / (1000 * 60 * 60 * 24);
+      sumaDias += diff;
+    });
+
+    const promedio = sumaDias / registros.length;
+
+    res.json({ promedioDias: Number(promedio.toFixed(2)) });
+
+  } catch (err) {
+    console.error("dashboardTiempoContratacion error:", err);
+    res.status(500).json({ msg: "Error tiempo de contratación", error: err.message });
+  }
+};
+
+
+// 3.6 Listado de postulaciones con filtros + paginación
+export const dashboardPostulaciones = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      area,
+      vacanteId,
+      estado,
+      search,
+      fechaDesde,
+      fechaHasta,
+      sortBy = "fechaPostulacion",
+      order = "desc"
+    } = req.query;
+
+    const take = Number(limit);
+    const skip = (Number(page) - 1) * take;
+
+    const where = {};
+
+    if (area) {
+      where.vacante = { area };
+    }
+
+    if (vacanteId)
+      where.vacanteId = Number(vacanteId);
+
+    if (estado)
+      where.estado = estado;
+
+    if (fechaDesde || fechaHasta) {
+      where.fechaPostulacion = {};
+      if (fechaDesde) where.fechaPostulacion.gte = new Date(fechaDesde);
+      if (fechaHasta) where.fechaPostulacion.lte = new Date(fechaHasta);
+    }
+
+    if (search) {
+      where.OR = [
+        { usuario: { nombre: { contains: search, mode: "insensitive" } } },
+        { usuario: { correo: { contains: search, mode: "insensitive" } } },
+        { usuario: { numeroDocumento: { contains: search, mode: "insensitive" } } },
+      ];
+    }
+
+    const orderBy = {};
+    orderBy[sortBy] = order.toLowerCase() === "asc" ? "asc" : "desc";
+
+    const [total, data] = await Promise.all([
+      prisma.postulacion.count({ where }),
+      prisma.postulacion.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        include: {
+          usuario: { select: { nombre: true, correo: true, numeroDocumento: true } },
+          vacante: { select: { id: true, titulo: true, area: true } }
+        }
+      })
+    ]);
+
+    res.json({
+      meta: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / take)
+      },
+      data
+    });
+
+  } catch (err) {
+    console.error("dashboardPostulaciones error:", err);
+    res.status(500).json({ msg: "Error al listar postulaciones", error: err.message });
+  }
+};
+

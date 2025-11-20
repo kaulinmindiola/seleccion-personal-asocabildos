@@ -2,125 +2,121 @@ import prisma from "../prisma/client.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-const SALT = parseInt(process.env.SALT_ROUNDS || "10");
-
-// ===========================
-// 📌 Registro de usuario
-// ===========================
+/* ============================================================
+   REGISTER (Crear usuario)
+   ============================================================ */
 export const register = async (req, res) => {
   try {
-    const { nombre, correo, contrasena, rol, numeroDocumento } = req.body;
+    const { 
+      nombre,
+      correo,
+      contrasena,
+      rol,
+      credencialTemp,
+      numeroDocumento,
+      fechaExpedicion
+    } = req.body;
 
-    // 🚫 Bloquear registro directo de postulantes
-    if (rol && rol.toUpperCase() === "POSTULANTE") {
-      return res.status(403).json({
-        msg: "Los postulantes se crean automáticamente al postularse a una vacante.",
-      });
+    // Validación de campos requeridos
+    if (
+      !nombre ||
+      !correo ||
+      !contrasena ||
+      !rol ||
+      !numeroDocumento
+    ) {
+      return res.status(400).json({ msg: "Todos los campos obligatorios no fueron enviados" });
     }
 
-    if (!correo || !contrasena || !nombre) {
-      return res
-        .status(400)
-        .json({ msg: "Nombre, correo y contraseña son obligatorios" });
-    }
-
-    // Verificar si el correo o número de documento ya existen
-    const userExists = await prisma.usuario.findFirst({
-      where: {
-        OR: [{ correo }, { numeroDocumento: numeroDocumento || "" }],
-      },
+    // Verificar si ya existe
+    const existingUser = await prisma.usuario.findUnique({
+      where: { numeroDocumento: String(numeroDocumento) },
     });
 
-    if (userExists) {
+    if (existingUser) {
       return res.status(409).json({ msg: "El usuario ya existe" });
     }
 
-    const hashedPassword = await bcrypt.hash(contrasena, SALT);
+    // Encriptar contraseña
+    const hashedPassword = await bcrypt.hash(contrasena, 10);
 
-    const user = await prisma.usuario.create({
+    // Crear usuario
+    const newUser = await prisma.usuario.create({
       data: {
         nombre,
         correo,
-        numeroDocumento: numeroDocumento || null,
         contrasena: hashedPassword,
-        rol: rol || "ADMIN", // puedes ajustar rol por defecto
+        rol,
+        credencialTemp,
+        numeroDocumento: String(numeroDocumento),
+        fechaExpedicion: new Date(fechaExpedicion),
       },
     });
 
-    const { contrasena: _p, ...userData } = user;
-    res.status(201).json(userData);
+    const { contrasena: _, ...data } = newUser;
+
+    return res.status(201).json({ msg: "Usuario creado", user: data });
+
   } catch (error) {
-    res
-      .status(500)
-      .json({ msg: "Error al registrar usuario", error: error.message });
+    console.error("Register Error:", error);
+    return res.status(500).json({ msg: "Error en registro", error: error.message });
   }
 };
 
-// ===========================
-// 📌 Inicio de sesión
-// ===========================
-console.log(
-  "🔐 JWT_SECRET:",
-  process.env.JWT_SECRET ? "Cargado" : "NO CARGADO"
-);
 
+/* ============================================================
+   LOGIN
+   ============================================================ */
 export const login = async (req, res) => {
   try {
-    const { identifier, correo, contrasena, password } = req.body;
+    const { numeroDocumento, password } = req.body;
 
-    // 🔹 Permitir tanto 'identifier' como 'correo'
-    const inputIdentifier = identifier || correo;
-    const inputPassword = contrasena || password;
-
-    if (!inputIdentifier || !inputPassword) {
-      return res
-        .status(400)
-        .json({ msg: "Debe proporcionar correo o número de documento y contraseña" });
+    if (!numeroDocumento || !password) {
+      return res.status(400).json({ msg: "numeroDocumento y password obligatorios" });
     }
 
-    // Buscar por correo o número de documento
-   // Buscar usuario por correo o número de documento
-const user = await prisma.usuario.findFirst({
-  where: {
-    OR: [
-      { correo: inputIdentifier },
-      { numeroDocumento: inputIdentifier }
-    ]
-  }
-});
+    const user = await prisma.usuario.findUnique({
+      where: { numeroDocumento: String(numeroDocumento) }
+    });
 
-if (!user)
-  return res.status(404).json({ msg: "Usuario no encontrado" });
+    if (!user) {
+      return res.status(404).json({ msg: "Usuario no encontrado" });
+    }
 
-    const valid = await bcrypt.compare(inputPassword, user.contrasena);
-    if (!valid) return res.status(401).json({ msg: "Contraseña incorrecta" });
+    // Solo ADMIN y RRHH pueden entrar
+    if (!["ADMIN", "RRHH"].includes(user.rol)) {
+      return res.status(403).json({ msg: "No autorizado para iniciar sesión" });
+    }
 
-    // Crear token JWT
+    const validPassword = await bcrypt.compare(password, user.contrasena);
+
+    if (!validPassword) {
+      return res.status(401).json({ msg: "Contraseña incorrecta" });
+    }
+
     const token = jwt.sign(
       { id: user.id, rol: user.rol },
       process.env.JWT_SECRET,
       { expiresIn: "8h" }
     );
 
-    const { contrasena: _p, ...userData } = user;
-    res.json({ token, user: userData });
+    const { contrasena, ...data } = user;
+
+    return res.json({ token, user: data });
+
   } catch (error) {
-    res
-      .status(500)
-      .json({ msg: "Error al iniciar sesión", error: error.message });
+    console.error("Login Error:", error);
+    return res.status(500).json({ msg: "Error en login", error: error.message });
   }
 };
 
-// ===========================
-// 📌 Obtener usuario autenticado
-// ===========================
+/* ============================================================
+   ME (Usuario autenticado)
+   ============================================================ */
 export const me = async (req, res) => {
   try {
-    const { contrasena, ...userData } = req.user;
-    res.json(userData);
+    res.json({ user: req.user });
   } catch (error) {
-    res
-      .status(500)
-      .json({ msg: "Error al obtener usuario", error: error.message });
+    res.status(500).json({ message: "Error obteniendo datos del usuario" });
   }
 };

@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   applyToVacante,
   recuperarCredenciales,
-  seguimientoUsuario,
+  seguimientoUsuario,seguimientoPublico,
   addFeedback
 } from "../controllers/postulaciones.controller.js";
 import { authRequired, permit } from "../middlewares/auth.middleware.js";
@@ -43,5 +43,8 @@ router.get("/seguimiento", authRequired, permit("POSTULANTE"), seguimientoUsuari
  * =============================================
  */
 router.post("/:id/feedback", authRequired, permit("RRHH", "ADMIN", "JEFE_AREA"), addFeedback);
+
+router.post("/seguimiento-publico", seguimientoPublico);
+
 
 export default router;
