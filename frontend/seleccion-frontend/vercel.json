@@ -1,8 +1,12 @@
 {
   "rewrites": [
     {
-      "source": "/:path*",
-      "destination": "https://ssp-production-02ed.up.railway.app/:path*"
+      "source": "/",
+      "destination": "https://ssp-production-02ed.up.railway.app/"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "https://ssp-production-02ed.up.railway.app/$1"
     }
   ]
 }
