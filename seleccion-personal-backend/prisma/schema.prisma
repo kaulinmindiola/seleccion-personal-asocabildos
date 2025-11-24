@@ -115,3 +115,5 @@ model Evaluacion {
   postulacion Postulacion @relation("PostulacionEvaluaciones", fields: [postulacionId], references: [id])
   evaluador   Usuario     @relation("EvaluadorEvaluaciones", fields: [evaluadorId], references: [id])
 }
+
+

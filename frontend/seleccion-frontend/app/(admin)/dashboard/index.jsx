@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { 
-  View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity 
+  View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator 
 } from 'react-native';
 import { useAuth } from '../../../src/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../../src/services/api';
 
 export default function AdminDashboard() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth(); // ❗ signOut eliminado
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -18,16 +18,15 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      // Ejecutamos las peticiones en paralelo para mayor velocidad
       const [kpiRes, areaRes, postulacionesRes] = await Promise.all([
         api.get('/dashboard/kpis'),
         api.get('/dashboard/por-area'),
-        api.get('/dashboard/postulaciones?limit=5') // Traemos las 5 últimas
+        api.get('/dashboard/postulaciones?limit=5')
       ]);
 
       setKpis(kpiRes.data);
       setAreas(areaRes.data);
-      setRecientes(postulacionesRes.data.data); // Según tu JSON: { meta: ..., data: [...] }
+      setRecientes(postulacionesRes.data.data);
 
     } catch (error) {
       console.error("Error cargando dashboard:", error);
@@ -46,7 +45,7 @@ export default function AdminDashboard() {
     fetchData();
   }, []);
 
-  // Componente de Tarjeta KPI pequeña
+  // Componente KPI
   const KpiCard = ({ title, value, icon, color }) => (
     <View style={styles.kpiCard}>
       <View style={[styles.iconBg, { backgroundColor: color + '20' }]}>
@@ -72,15 +71,13 @@ export default function AdminDashboard() {
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
-      {/* Header */}
+      {/* HEADER SIN BOTÓN LOGOUT */}
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Hola, {user?.nombre || 'Admin'}</Text>
           <Text style={styles.subHeader}>Panel de Control</Text>
         </View>
-        <TouchableOpacity onPress={signOut} style={styles.logoutBtn}>
-          <Ionicons name="log-out-outline" size={24} color="#ef4444" />
-        </TouchableOpacity>
+        {/* ❌ BOTÓN LOGOUT ELIMINADO */}
       </View>
 
       {/* Sección 1: KPIs Globales */}
@@ -114,7 +111,7 @@ export default function AdminDashboard() {
         </View>
       </View>
 
-      {/* Sección 2: Gráfica simple de Áreas (Barras visuales) */}
+      {/* Sección 2: Gráfica simple */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Postulaciones por Área</Text>
         <View style={styles.card}>
@@ -127,7 +124,6 @@ export default function AdminDashboard() {
                   <Text style={styles.areaName}>{item.area}</Text>
                   <Text style={styles.areaCount}>{item.postulaciones}</Text>
                 </View>
-                {/* Barra de progreso visual simple */}
                 <View style={styles.progressBarBg}>
                   <View 
                     style={[
@@ -142,7 +138,7 @@ export default function AdminDashboard() {
         </View>
       </View>
 
-      {/* Sección 3: Últimas Postulaciones */}
+      {/* Sección 3: Actividad Reciente */}
       <View style={[styles.section, { marginBottom: 40 }]}>
         <Text style={styles.sectionTitle}>Actividad Reciente</Text>
         {recientes.map((post) => (
@@ -153,9 +149,10 @@ export default function AdminDashboard() {
                 {new Date(post.fechaPostulacion).toLocaleDateString()}
               </Text>
             </View>
+
             <Text style={styles.postVacante}>{post.vacante.titulo}</Text>
             <Text style={styles.postDoc}>DOC: {post.usuario.numeroDocumento}</Text>
-            
+
             <View style={styles.badgeContainer}>
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{post.estado.replace('_', ' ')}</Text>
@@ -164,6 +161,7 @@ export default function AdminDashboard() {
           </View>
         ))}
       </View>
+
     </ScrollView>
   );
 }
@@ -178,7 +176,6 @@ const styles = StyleSheet.create({
   },
   greeting: { fontSize: 20, fontWeight: 'bold', color: '#333' },
   subHeader: { fontSize: 14, color: '#666' },
-  logoutBtn: { padding: 8, backgroundColor: '#fee2e2', borderRadius: 50 },
 
   section: { padding: 20, paddingBottom: 0 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#444' },
@@ -195,7 +192,6 @@ const styles = StyleSheet.create({
   card: { backgroundColor: 'white', padding: 15, borderRadius: 12, elevation: 2 },
   emptyText: { textAlign: 'center', color: '#999', fontStyle: 'italic' },
 
-  // Estilos para lista de áreas
   areaRow: { marginBottom: 12 },
   areaInfo: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
   areaName: { fontWeight: '600', color: '#555' },
@@ -203,7 +199,6 @@ const styles = StyleSheet.create({
   progressBarBg: { height: 6, backgroundColor: '#f0f0f0', borderRadius: 3 },
   progressBarFill: { height: 6, backgroundColor: '#2563eb', borderRadius: 3 },
 
-  // Estilos postulaciones
   postCard: { 
     backgroundColor: 'white', padding: 15, borderRadius: 12, marginBottom: 10, 
     borderLeftWidth: 4, borderLeftColor: '#2563eb', elevation: 1 
@@ -217,5 +212,3 @@ const styles = StyleSheet.create({
   badge: { backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
   badgeText: { color: '#2563eb', fontSize: 10, fontWeight: 'bold' }
 });
-
-

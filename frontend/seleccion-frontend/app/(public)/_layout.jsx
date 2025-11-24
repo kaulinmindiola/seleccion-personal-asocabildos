@@ -22,7 +22,7 @@ export default function PublicLayout() {
       <Tabs.Screen
         name="vacantes"
         options={{
-          title: 'Oportunidades',
+          title: 'Vacantes',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="briefcase" size={size} color={color} />
           ),

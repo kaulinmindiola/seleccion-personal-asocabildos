@@ -116,7 +116,7 @@ export default function VacantesList() {
         <TouchableOpacity
           style={styles.outlineButton}
           onPress={() =>
-            router.push(`/ (public) /vacantes/${item.id}`)
+            router.push(`vacantes/${item.id}`)
           }
         >
           <Text style={styles.outlineButtonText}>Ver Detalle</Text>
@@ -125,7 +125,7 @@ export default function VacantesList() {
         <TouchableOpacity
           style={styles.primaryButton}
           onPress={() =>
-            router.push(`/ (public) /vacantes/${item.id}/postular`)
+            router.push(`vacantes/${item.id}/postular`)
           }
         >
           <Text style={styles.primaryButtonText}>Postularme</Text>

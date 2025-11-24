@@ -1,10 +1,12 @@
+import { Stack } from 'expo-router';
 
-import { Stack } from "expo-router";
-
-export default function AdminLayout() {
+export default function DashboardInternalLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="dashboard" />
+    <Stack screenOptions={{ headerShown: false }}> 
+      {/* headerShown: false es CRÍTICO aquí. 
+         Dejamos que el Drawer (Padre) se encargue de mostrar el título y la hamburguesa.
+      */}
+      <Stack.Screen name="index" />
     </Stack>
   );
 }

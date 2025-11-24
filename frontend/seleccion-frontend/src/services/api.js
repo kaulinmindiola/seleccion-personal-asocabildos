@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // Importante
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // TU IP REAL (Verifica que sea la correcta de tu PC)
 const IP = '192.168.101.5'; 
@@ -10,8 +10,9 @@ const getBaseUrl = () => {
   return `http://${IP}:4000/api`;
 };
 
+// ✅ CORRECCIÓN: Llamamos a la función getBaseUrl() para obtener la URL dinámica
 const api = axios.create({
-  baseURL: getBaseUrl(),
+  baseURL: getBaseUrl(), 
   headers: {
     'Content-Type': 'application/json',
   },

@@ -22,4 +22,4 @@ const fileFilter = (_req, file, cb) => {
   else cb(new Error("Solo se permiten archivos PDF"));
 };
 
-export const uploadSingle = multer({ storage, fileFilter }).single("documento");
+export const uploadSingle = multer({ storage, fileFilter }).single("cv");

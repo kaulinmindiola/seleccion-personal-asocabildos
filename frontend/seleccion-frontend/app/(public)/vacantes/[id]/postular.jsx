@@ -1,164 +1,297 @@
-import React, { useState } from 'react';
-import { 
-  View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert, ActivityIndicator 
+import React, { useState, useEffect } from 'react';
+import {
+  View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity,
+  Alert, ActivityIndicator, Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import api from '../../../../src/services/api';
 
 export default function PostularForm() {
-  const { id, titulo } = useLocalSearchParams();
-  const router = useRouter();
-  
-  const [form, setForm] = useState({
-    nombre: '',
-    numeroDocumento: '',
-    correo: '',
-    fechaExpedicion: '', // YYYY-MM-DD
-  });
-  const [archivo, setArchivo] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const params = useLocalSearchParams();
+  const router = useRouter();
 
-  const seleccionarArchivo = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'application/msword'], // Solo PDF o Word
-        copyToCacheDirectory: true,
-      });
+  // Aseguramos que el ID sea un string válido para el FormData
+  const vacanteId = params.id; 
+  const titulo = params.titulo ?? "Vacante";
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setArchivo(result.assets[0]);
-      }
-    } catch (err) {
-      Alert.alert("Error", "No se pudo seleccionar el archivo");
-    }
-  };
+  const [form, setForm] = useState({
+    nombre: '',
+    numeroDocumento: '',
+    correo: '',
+    telefono: '',
+    fechaExpedicion: '', 
+  });
 
-  const enviarPostulacion = async () => {
-    if (!form.nombre || !form.numeroDocumento || !form.fechaExpedicion || !archivo) {
-      Alert.alert("Faltan datos", "Por favor completa todos los campos y adjunta tu CV.");
-      return;
-    }
+  const [date, setDate] = useState(new Date());
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
-    setLoading(true);
-    try {
-      // Crear FormData para envío de archivo
-      const formData = new FormData();
-      formData.append('vacanteId', id);
-      formData.append('nombre', form.nombre);
-      formData.append('numeroDocumento', form.numeroDocumento);
-      formData.append('correo', form.correo);
-      formData.append('fechaExpedicion', form.fechaExpedicion);
+  const [archivo, setArchivo] = useState(null);
+  const [loading, setLoading] = useState(false);
+  
+  // Debug inicial
+  useEffect(() => {
+    console.log("📝 Formulario cargado para Vacante ID:", vacanteId);
+  }, [vacanteId]);
+
+  const seleccionarArchivo = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "application/pdf",
+        copyToCacheDirectory: true,
+      });
+
+      if (res.canceled) return; 
+
+      const file = res.assets ? res.assets[0] : res;
+
+      setArchivo({
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType || "application/pdf",
+        size: file.size,
+      });
+      
+    } catch (err) {
+      console.log("ERROR SELECTOR:", err);
+      Alert.alert("Error", "No se pudo seleccionar el archivo.");
+    }
+  };
+
+  const enviarPostulacion = async () => {
+    console.log("👆 Botón presionado. Validando datos...");
+
+    // Validación. Ahora form.fechaExpedicion debe estar lleno por la corrección en los onChange
+    if (!form.nombre || !form.numeroDocumento || !form.fechaExpedicion || !archivo) {
+      console.log("❌ Faltan datos", form); 
+      Alert.alert("Faltan datos", "Por favor completa todos los campos y adjunta tu CV.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const formData = new FormData();
+
+      // 2. Construcción de datos
+      formData.append("vacanteId", String(vacanteId));
+      formData.append("nombre", form.nombre);
+      formData.append("numeroDocumento", form.numeroDocumento);
+      formData.append("correo", form.correo || "");
+      formData.append("telefono", form.telefono || "");
+      formData.append("fechaExpedicion", form.fechaExpedicion); 
       
-      // Adjuntar archivo (React Native requiere uri, name y type)
-      formData.append('cv', {
-        uri: archivo.uri,
-        name: archivo.name,
-        type: archivo.mimeType || 'application/pdf',
-      });
+      // 3. Adjuntar archivo (Con lógica de Web/Móvil)
+      let fileToUpload;
+      
+      if (Platform.OS === 'web') {
+        // CRÍTICO PARA WEB: Convertir URI a Blob y luego a File
+        const response = await fetch(archivo.uri);
+        const blob = await response.blob();
+        fileToUpload = new File([blob], archivo.name, { type: archivo.type });
+        
+        formData.append("cv", fileToUpload); 
 
-      // Nota: Axios en React Native a veces requiere header especial para multipart
-      await api.post('/postulaciones', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      } else {
+        // MÓVIL: Usa la estructura de objeto de React Native
+        fileToUpload = {
+          uri: archivo.uri,
+          name: archivo.name || `cv_${Date.now()}.pdf`,
+          type: archivo.type || "application/pdf",
+        };
+        formData.append("cv", fileToUpload);
+      }
 
-      Alert.alert("¡Éxito!", "Tu postulación ha sido enviada correctamente.", [
-        { text: "OK", onPress: () => router.replace('/(public)/vacantes') }
-      ]);
+      console.log("🚀 Enviando FormData...");
 
-    } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "No se pudo enviar la postulación. Verifica tu conexión.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      const response = await api.post("/postulaciones", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        // La línea 'transformRequest' se deja comentada o se borra para evitar conflictos en web/móvil
+      });
 
-  return (
-    <ScrollView style={styles.container}>
-      <Stack.Screen 
-        options={{ title: 'Enviar Postulación', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} 
-      />
+      console.log("✅ Respuesta:", response.status);
 
-      <View style={styles.header}>
-        <Text style={styles.labelVacante}>Aplicando a:</Text>
-        <Text style={styles.tituloVacante}>{titulo}</Text>
-      </View>
+      // 4. Resetear Formulario y forzar navegación (UX)
+      setForm({
+        nombre: '',
+        numeroDocumento: '',
+        correo: '',
+        telefono: '',
+        fechaExpedicion: '', 
+      });
+      setArchivo(null);
+      setFechaSeleccionada(false);
 
-      <View style={styles.form}>
-        <Text style={styles.label}>Nombre Completo *</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="Ej. Juan Pérez" 
-          value={form.nombre}
-          onChangeText={(t) => setForm({...form, nombre: t})}
-        />
+      Alert.alert(
+        "¡Postulación Exitosa!",
+        `Tu postulación a "${titulo}" ha sido registrada.`,
+        [{ text: "OK", onPress: () => router.replace("/(public)/vacantes") }]
+      );
 
-        <Text style={styles.label}>Número de Documento *</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="Ej. 12345678" 
-          keyboardType="numeric"
-          value={form.numeroDocumento}
-          onChangeText={(t) => setForm({...form, numeroDocumento: t})}
-        />
+    } catch (error) {
+      console.error("🔴 Error envío:", error);
+      const msg = error.response?.data?.msg || "Error de conexión o servidor.";
+      Alert.alert("Error", msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        <Text style={styles.label}>Correo Electrónico (Opcional)</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="juan@email.com" 
-          keyboardType="email-address"
-          autoCapitalize="none"
-          value={form.correo}
-          onChangeText={(t) => setForm({...form, correo: t})}
-        />
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={{paddingBottom: 50}}>
+      <Stack.Screen options={{ title: "Postularse", headerShown: true }} />
 
-        <Text style={styles.label}>Fecha Expedición Doc. (AAAA-MM-DD) *</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="2020-01-30" 
-          value={form.fechaExpedicion}
-          onChangeText={(t) => setForm({...form, fechaExpedicion: t})}
-        />
+      <View style={styles.header}>
+        <Text style={styles.info}>Vacante:</Text>
+        <Text style={styles.titulo}>{titulo}</Text>
+      </View>
 
-        {/* Selector de Archivo */}
-        <Text style={styles.label}>Hoja de Vida (PDF) *</Text>
-        <TouchableOpacity style={styles.uploadBtn} onPress={seleccionarArchivo}>
-          <Ionicons name={archivo ? "checkmark-circle" : "cloud-upload"} size={24} color={archivo ? "#10b981" : "#2563eb"} />
-          <Text style={[styles.uploadText, archivo && { color: '#10b981' }]}>
-            {archivo ? archivo.name : "Seleccionar Archivo"}
-          </Text>
-        </TouchableOpacity>
+      <View style={styles.form}>
+        <Text style={styles.label}>Nombre *</Text>
+        <TextInput
+          style={styles.input}
+          value={form.nombre}
+          onChangeText={(t) => setForm({ ...form, nombre: t })}
+          placeholder="Nombre completo"
+        />
 
-        <TouchableOpacity 
-          style={[styles.submitBtn, loading && { opacity: 0.7 }]} 
-          onPress={enviarPostulacion}
-          disabled={loading}
-        >
-          {loading ? <ActivityIndicator color="white" /> : <Text style={styles.submitText}>ENVIAR POSTULACIÓN</Text>}
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
-  );
+        <Text style={styles.label}>Documento de identidad *</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="numeric"
+          value={form.numeroDocumento}
+          onChangeText={(t) => setForm({ ...form, numeroDocumento: t })}
+          placeholder="Cédula"
+        />
+
+        <Text style={styles.label}>Correo electronico</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="email-address"
+          value={form.correo}
+          onChangeText={(t) => setForm({ ...form, correo: t })}
+          placeholder="ejemplo@correo.com"
+        />
+
+        <Text style={styles.label}>Teléfono / celular</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="phone-pad"
+          value={form.telefono}
+          onChangeText={(t) => setForm({ ...form, telefono: t })}
+          placeholder="XXX-XXX-XXXX"
+        />
+
+        <Text style={styles.label}>Fecha de expedición del documento *</Text>
+
+        {/* Selector de Fecha Híbrido */}
+        {Platform.OS === "web" ? (
+          <View style={styles.inputWebWrapper}>
+            <input type="date"
+              value={date.toISOString().split("T")[0]}
+              onChange={(e) => {
+              const newDate = new Date(e.target.value);
+              setForm(prev => ({ ...prev, fechaExpedicion: newDate.toISOString().split("T")[0] })); 
+              setDate(newDate);
+              setFechaSeleccionada(true);
+            }}
+              style={{ 
+                  width: '100%', padding: 10, borderRadius: 8, 
+                  border: '1px solid #cbd5e1', fontFamily: 'system-ui' 
+              }}
+            />
+          </View>
+        ) : (
+          <>
+            <TouchableOpacity
+              style={styles.dateBtn}
+              onPress={() => setShowPicker(true)}
+            >
+              <Ionicons name="calendar" size={20} color="#2563eb" />
+              <Text style={{ marginLeft: 8, color: fechaSeleccionada ? '#333' : '#999' }}>
+                {fechaSeleccionada
+                  ? date.toLocaleDateString()
+                  : "Seleccionar fecha"}
+              </Text>
+            </TouchableOpacity>
+
+            {showPicker && (
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display="default"
+                onChange={(e, d) => {
+                  setShowPicker(false);
+                  if (d) {
+                    setDate(d);
+                    setFechaSeleccionada(true);
+                    setForm(prev => ({ ...prev, fechaExpedicion: d.toISOString().split("T")[0] }));
+                  }
+                }}
+              />
+            )}
+          </>
+        )}
+
+        <Text style={[styles.label, { marginTop: 15 }]}>Hoja de Vida (PDF) *</Text>
+        <TouchableOpacity style={styles.uploadBtn} onPress={seleccionarArchivo}>
+          <Ionicons
+            name={archivo ? "checkmark-circle" : "cloud-upload"}
+            size={24}
+            color={archivo ? "#10b981" : "#2563eb"}
+          />
+          <Text style={{ marginLeft: 8, color: archivo ? "#10b981" : "#2563eb", fontWeight: '500' }}>
+            {archivo ? archivo.name : "Seleccionar archivo PDF"}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.submit, loading && { opacity: 0.7 }]}
+          onPress={enviarPostulacion}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.submitText}>ENVIAR POSTULACIÓN</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  header: { backgroundColor: '#f8fafc', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  labelVacante: { fontSize: 12, color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold' },
-  tituloVacante: { fontSize: 20, fontWeight: 'bold', color: '#0f172a' },
-  form: { padding: 20 },
-  label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8, marginTop: 15 },
-  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 12, fontSize: 16, backgroundColor: '#f8fafc' },
-  uploadBtn: { 
-    borderWidth: 2, borderColor: '#bfdbfe', borderStyle: 'dashed', borderRadius: 10, 
-    padding: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff6ff', marginTop: 5 
-  },
-  uploadText: { color: '#2563eb', fontWeight: '600', marginTop: 5 },
-  submitBtn: { 
-    backgroundColor: '#2563eb', padding: 18, borderRadius: 10, alignItems: 'center', marginTop: 30, 
-    shadowColor: '#2563eb', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5 
-  },
-  submitText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
+  container: { backgroundColor: "#fff", flex: 1 },
+  header: { padding: 20, backgroundColor: "#f1f5f9", borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  info: { fontSize: 12, color: "#64748b", textTransform: 'uppercase', fontWeight: 'bold' },
+  titulo: { fontSize: 20, fontWeight: "bold", color: "#0f172a", marginTop: 2 },
+  form: { padding: 20 },
+  label: { marginTop: 15, fontWeight: "600", color: "#334155", marginBottom: 5 },
+  input: {
+    borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 8,
+    padding: 12, backgroundColor: '#f8fafc', fontSize: 16
+  },
+  inputWebWrapper: { marginTop: 5 },
+  dateBtn: {
+    borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 8,
+    padding: 12, marginTop: 5, flexDirection: "row", alignItems: "center",
+    backgroundColor: '#f8fafc'
+  },
+  uploadBtn: {
+    borderWidth: 2, borderColor: "#bfdbfe", borderStyle: "dashed",
+    padding: 20, alignItems: "center", borderRadius: 10,
+    backgroundColor: "#eff6ff", marginTop: 5,
+  },
+  submit: {
+    marginTop: 30, padding: 16, backgroundColor: "#2563eb",
+    borderRadius: 10, alignItems: "center", shadowColor: "#2563eb",
+    shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 4
+  },
+  submitText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
 });
