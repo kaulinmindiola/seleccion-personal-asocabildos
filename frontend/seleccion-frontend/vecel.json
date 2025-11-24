@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "https://ssp-production-02ed.up.railway.app/$1"
-    }
-  ]
-}
